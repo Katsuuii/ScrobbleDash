@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<BorderPane xmlns="http://javafx.com/javafx/21"
+            xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="app.DashboardController">
+
+    <top>
+        <HBox spacing="10" alignment="CENTER_LEFT" BorderPane.alignment="CENTER">
+            <padding>
+                <Insets top="12" right="12" bottom="12" left="12"/>
+            </padding>
+
+            <Label text="ScrobbleDash" style="-fx-font-size: 18px; -fx-font-weight: bold;"/>
+            <Region HBox.hgrow="ALWAYS"/>
+
+            <ProgressIndicator fx:id="progress" visible="false" prefWidth="22" prefHeight="22"/>
+            <Button fx:id="refreshButton" text="Refresh" onAction="#onRefresh"/>
+        </HBox>
+    </top>
+
+    <center>
+        <VBox spacing="10">
+            <padding>
+                <Insets right="12" bottom="12" left="12"/>
+            </padding>
+
+            <TableView fx:id="tracksTable" VBox.vgrow="ALWAYS">
+                <columns>
+                    <TableColumn fx:id="trackCol" text="Track" prefWidth="240"/>
+                    <TableColumn fx:id="artistCol" text="Artist" prefWidth="200"/>
+                    <TableColumn fx:id="albumCol" text="Album" prefWidth="220"/>
+                    <TableColumn fx:id="whenCol" text="When / Now Playing" prefWidth="200"/>
+                </columns>
+            </TableView>
+
+            <Label fx:id="statusLabel" text="Ready." style="-fx-opacity: 0.85;"/>
+        </VBox>
+    </center>
+
+</BorderPane>
