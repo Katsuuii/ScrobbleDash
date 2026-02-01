@@ -17,6 +17,9 @@
             <Label text="ScrobbleDash" style="-fx-font-size: 18px; -fx-font-weight: bold;"/>
             <Region HBox.hgrow="ALWAYS"/>
 
+            <CheckBox fx:id="autoRefreshCheck" text="Auto-refresh"/>
+            <ComboBox fx:id="autoRefreshSeconds" prefWidth="90" promptText="Seconds"/>
+
             <ProgressIndicator fx:id="progress" visible="false" prefWidth="22" prefHeight="22"/>
             <Button fx:id="refreshButton" text="Refresh" onAction="#onRefresh"/>
         </HBox>
@@ -25,17 +28,49 @@
     <center>
         <VBox spacing="10">
             <padding>
-                <Insets right="12" bottom="12" left="12"/>
+                <Insets top="0" right="12" bottom="12" left="12"/>
             </padding>
 
-            <TableView fx:id="tracksTable" VBox.vgrow="ALWAYS">
-                <columns>
-                    <TableColumn fx:id="trackCol" text="Track" prefWidth="240"/>
-                    <TableColumn fx:id="artistCol" text="Artist" prefWidth="200"/>
-                    <TableColumn fx:id="albumCol" text="Album" prefWidth="220"/>
-                    <TableColumn fx:id="whenCol" text="When / Now Playing" prefWidth="200"/>
-                </columns>
-            </TableView>
+            <TabPane fx:id="tabs" VBox.vgrow="ALWAYS">
+                <tabs>
+
+                    <Tab text="Recent Tracks" closable="false">
+                        <VBox spacing="10">
+                            <padding>
+                                <Insets top="0" right="0" bottom="0" left="0"/>
+                            </padding>
+
+                            <TableView fx:id="tracksTable" VBox.vgrow="ALWAYS">
+                                <columns>
+                                    <TableColumn fx:id="artCol" text="Art" prefWidth="60"/>
+                                    <TableColumn fx:id="trackCol" text="Track" prefWidth="240"/>
+                                    <TableColumn fx:id="artistCol" text="Artist" prefWidth="200"/>
+                                    <TableColumn fx:id="albumCol" text="Album" prefWidth="220"/>
+                                    <TableColumn fx:id="whenCol" text="When" prefWidth="160"/>
+                                </columns>
+                            </TableView>
+
+                            <HBox spacing="10" alignment="CENTER_RIGHT">
+                                <Region HBox.hgrow="ALWAYS"/>
+                                <Button fx:id="loadMoreButton" text="Load More" onAction="#onLoadMore"/>
+                            </HBox>
+                        </VBox>
+                    </Tab>
+
+                    <Tab text="Top Artists" closable="false">
+                        <VBox spacing="10">
+                            <TableView fx:id="artistsTable" VBox.vgrow="ALWAYS">
+                                <columns>
+                                    <TableColumn fx:id="artistArtCol" text="Art" prefWidth="60"/>
+                                    <TableColumn fx:id="topArtistCol" text="Artist" prefWidth="420"/>
+                                    <TableColumn fx:id="playcountCol" text="Plays" prefWidth="140"/>
+                                </columns>
+                            </TableView>
+                        </VBox>
+                    </Tab>
+
+                </tabs>
+            </TabPane>
 
             <Label fx:id="statusLabel" text="Ready." style="-fx-opacity: 0.85;"/>
         </VBox>
