@@ -2,6 +2,7 @@
 
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.*?>
+<?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.*?>
 
 <BorderPane xmlns="http://javafx.com/javafx/21"
@@ -28,7 +29,7 @@
     <center>
         <VBox spacing="10">
             <padding>
-                <Insets top="0" right="12" bottom="12" left="12"/>
+                <Insets right="12" bottom="12" left="12"/>
             </padding>
 
             <TabPane fx:id="tabs" VBox.vgrow="ALWAYS">
@@ -36,10 +37,6 @@
 
                     <Tab text="Recent Tracks" closable="false">
                         <VBox spacing="10">
-                            <padding>
-                                <Insets top="0" right="0" bottom="0" left="0"/>
-                            </padding>
-
                             <TableView fx:id="tracksTable" VBox.vgrow="ALWAYS">
                                 <columns>
                                     <TableColumn fx:id="artCol" text="Art" prefWidth="60"/>
@@ -75,5 +72,37 @@
             <Label fx:id="statusLabel" text="Ready." style="-fx-opacity: 0.85;"/>
         </VBox>
     </center>
+
+    <!-- ✅ Spotify-style Now Playing bar -->
+    <bottom>
+        <HBox fx:id="nowPlayingBar"
+              spacing="12"
+              alignment="CENTER_LEFT"
+              BorderPane.alignment="CENTER"
+              style="-fx-background-color: #121212; -fx-padding: 10; -fx-border-color: #2a2a2a; -fx-border-width: 1 0 0 0;"
+              visible="false"
+              managed="false">
+
+            <ImageView fx:id="nowPlayingArt" fitWidth="48" fitHeight="48" preserveRatio="true"/>
+
+            <VBox spacing="2">
+                <Label fx:id="nowPlayingTitle"
+                       text="Track"
+                       style="-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 13;"/>
+                <Label fx:id="nowPlayingArtist"
+                       text="Artist"
+                       style="-fx-text-fill: #b3b3b3; -fx-font-size: 12;"/>
+            </VBox>
+
+            <Region HBox.hgrow="ALWAYS"/>
+
+            <Label fx:id="nowPlayingStatus"
+                   text="Now Playing"
+                   style="-fx-text-fill: #1db954; -fx-font-weight: bold;"/>
+
+            <Button text="Refresh" onAction="#onRefresh"
+                    style="-fx-background-color: #2a2a2a; -fx-text-fill: white;"/>
+        </HBox>
+    </bottom>
 
 </BorderPane>

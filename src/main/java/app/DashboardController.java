@@ -13,6 +13,7 @@ import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.layout.HBox;
 import javafx.util.Duration;
 
 import java.time.Instant;
@@ -25,6 +26,9 @@ import java.util.concurrent.Executors;
 public class DashboardController {
 
     private static final String NO_IMAGE_HASH = "2a96cbd8b46e442fc41c2b86b821562f";
+
+    // ✅ Auto refresh defaults (always on)
+    private static final int AUTO_REFRESH_DEFAULT_SECONDS = 20;
 
     // Artist icon cache + thread pool
     private final Map<String, String> artistImageCache = new ConcurrentHashMap<>();
@@ -52,8 +56,17 @@ public class DashboardController {
     @FXML private Button loadMoreButton;
     @FXML private ProgressIndicator progress;
     @FXML private Label statusLabel;
+
+    // (You can keep these in FXML or remove them; auto-refresh works either way)
     @FXML private CheckBox autoRefreshCheck;
     @FXML private ComboBox<Integer> autoRefreshSeconds;
+
+    // ✅ Now Playing bar (bottom)
+    @FXML private HBox nowPlayingBar;
+    @FXML private ImageView nowPlayingArt;
+    @FXML private Label nowPlayingTitle;
+    @FXML private Label nowPlayingArtist;
+    @FXML private Label nowPlayingStatus;
 
     private LastFmClient client;
 
@@ -171,35 +184,48 @@ public class DashboardController {
             }
         });
 
-        // ---- Auto refresh controls ----
-        autoRefreshSeconds.setItems(FXCollections.observableArrayList(15, 30, 60, 120));
-        autoRefreshSeconds.getSelectionModel().select(Integer.valueOf(30));
-        autoRefreshSeconds.setDisable(true);
+        // ---- Auto refresh UI (optional to keep) ----
+        if (autoRefreshSeconds != null) {
+            autoRefreshSeconds.setItems(FXCollections.observableArrayList(15, 20, 30, 60, 120));
+            autoRefreshSeconds.getSelectionModel().select(Integer.valueOf(AUTO_REFRESH_DEFAULT_SECONDS));
+            autoRefreshSeconds.setDisable(false);
 
-        autoRefreshCheck.selectedProperty().addListener((obs, o, n) -> {
-            autoRefreshSeconds.setDisable(!n);
-            configureAutoRefresh();
-        });
+            autoRefreshSeconds.valueProperty().addListener((obs, o, n) -> configureAutoRefresh());
+        }
 
-        autoRefreshSeconds.valueProperty().addListener((obs, o, n) -> configureAutoRefresh());
+        if (autoRefreshCheck != null) {
+            // Always-on: keep it checked and enabled, but we don't rely on it.
+            autoRefreshCheck.setSelected(true);
+            autoRefreshCheck.setDisable(true);
+        }
 
         // Refresh relative time every 20s
         relativeTimeTick = new Timeline(new KeyFrame(Duration.seconds(20), e -> tracksTable.refresh()));
         relativeTimeTick.setCycleCount(Timeline.INDEFINITE);
         relativeTimeTick.play();
 
+        // Now Playing bar hidden initially
+        if (nowPlayingBar != null) {
+            nowPlayingBar.setVisible(false);
+            nowPlayingBar.setManaged(false);
+        }
+
+        loadMoreButton.setDisable(true);
+
         // Load API config
         try {
             client = LastFmClient.fromClasspathProperties();
-            statusLabel.setText("Loaded configuration. Click Refresh.");
+            statusLabel.setText("Loaded configuration. Auto-refresh is ON.");
+
+            // ✅ Always start auto-refresh + do first load automatically
+            configureAutoRefresh();
+            Platform.runLater(this::refreshAll);
+
         } catch (Exception e) {
             statusLabel.setText("Config error: " + e.getMessage());
             refreshButton.setDisable(true);
             loadMoreButton.setDisable(true);
         }
-
-        // Initial button state
-        loadMoreButton.setDisable(true);
     }
 
     @FXML
@@ -232,7 +258,7 @@ public class DashboardController {
     }
 
     // -----------------------------
-    // RECENT TRACKS (PAGINATION)  ✅ #1 + #2 added
+    // RECENT TRACKS (PAGINATION)
     // -----------------------------
     private void loadRecentPage(int page, boolean replace) {
         if (client == null) return;
@@ -240,7 +266,6 @@ public class DashboardController {
 
         busyRecent = true;
 
-        // #2: prevent spam-click + show loading
         progress.setVisible(true);
         refreshButton.setDisable(true);
         loadMoreButton.setDisable(true);
@@ -260,8 +285,10 @@ public class DashboardController {
             if (replace) tracksTable.getItems().setAll(res.items);
             else tracksTable.getItems().addAll(res.items);
 
-            // #1: update Load More state
             loadMoreButton.setDisable(recentPage >= recentTotalPages);
+
+            // ✅ update Now Playing bar whenever tracks change
+            updateNowPlayingBar();
 
             progress.setVisible(false);
             refreshButton.setDisable(false);
@@ -271,10 +298,7 @@ public class DashboardController {
         task.setOnFailed(e -> {
             progress.setVisible(false);
             refreshButton.setDisable(false);
-
-            // #1: keep Load More consistent even after failure
             loadMoreButton.setDisable(recentPage >= recentTotalPages);
-
             busyRecent = false;
         });
 
@@ -298,7 +322,7 @@ public class DashboardController {
             List<TopArtistRow> rows = task.getValue();
             artistsTable.getItems().setAll(rows);
 
-            // Fetch icons in background (artist.getinfo -> fallback top album)
+            // Fetch icons in background
             for (TopArtistRow r : rows) {
                 String artistName = r.getArtist();
                 if (artistName == null || artistName.isBlank()) continue;
@@ -334,11 +358,21 @@ public class DashboardController {
         new Thread(task, "lastfm-topartists").start();
     }
 
+    // -----------------------------
+    // ✅ ALWAYS-ON AUTO REFRESH
+    // -----------------------------
     private void configureAutoRefresh() {
-        if (autoRefreshTimeline != null) autoRefreshTimeline.stop();
-        if (!autoRefreshCheck.isSelected()) return;
+        if (autoRefreshTimeline != null) {
+            autoRefreshTimeline.stop();
+            autoRefreshTimeline = null;
+        }
 
-        int secs = autoRefreshSeconds.getValue();
+        int secs = AUTO_REFRESH_DEFAULT_SECONDS;
+        if (autoRefreshSeconds != null) {
+            Integer v = autoRefreshSeconds.getValue();
+            if (v != null && v >= 5) secs = v;
+        }
+
         autoRefreshTimeline = new Timeline(
                 new KeyFrame(Duration.seconds(secs), e -> {
                     if (!busyRecent && !busyArtists) refreshAll();
@@ -346,6 +380,41 @@ public class DashboardController {
         );
         autoRefreshTimeline.setCycleCount(Timeline.INDEFINITE);
         autoRefreshTimeline.play();
+    }
+
+    // -----------------------------
+    // ✅ NOW PLAYING BAR (BOTTOM)
+    // -----------------------------
+    private void updateNowPlayingBar() {
+        if (nowPlayingBar == null) return;
+
+        RecentTrackRow now = null;
+        for (RecentTrackRow r : tracksTable.getItems()) {
+            if (r != null && r.isNowPlaying()) {
+                now = r;
+                break;
+            }
+        }
+
+        if (now == null) {
+            nowPlayingBar.setVisible(false);
+            nowPlayingBar.setManaged(false);
+            return;
+        }
+
+        nowPlayingTitle.setText(now.getTrack());
+        nowPlayingArtist.setText(now.getArtist());
+        nowPlayingStatus.setText("Now Playing");
+
+        String artUrl = now.getImageUrl();
+        if (artUrl != null && !artUrl.isBlank()) {
+            nowPlayingArt.setImage(new Image(artUrl, true));
+        } else {
+            nowPlayingArt.setImage(null);
+        }
+
+        nowPlayingBar.setManaged(true);
+        nowPlayingBar.setVisible(true);
     }
 
     private static String formatRelative(Instant playedAt) {
