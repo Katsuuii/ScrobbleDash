@@ -2,6 +2,7 @@ plugins {
     java
     application
     id("org.openjfx.javafxplugin") version "0.1.0"
+    id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
 group = "com.scrobbledash"
@@ -13,14 +14,13 @@ repositories {
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
+        languageVersion = JavaLanguageVersion.of(23)
     }
 }
 
 application {
-    mainClass.set("app.Main")
+    mainClass.set("app.MainLauncher")
 }
-
 
 javafx {
     version = "21.0.6"
@@ -31,6 +31,4 @@ dependencies {
     implementation("com.google.code.gson:gson:2.11.0")
 }
 
-tasks.withType<JavaCompile> {
-    options.encoding = "UTF-8"
-}
+fun shadowJar(function: Any) {}

@@ -22,7 +22,7 @@ import java.util.Properties;
 public class LastFmClient {
 
     private static final String API_BASE = "https://ws.audioscrobbler.com/2.0/";
-    // Last.fm "no image" placeholder hash (commonly returned)
+
     private static final String NO_IMAGE_HASH = "2a96cbd8b46e442fc41c2b86b821562f";
 
     private final HttpClient http;

@@ -17,8 +17,7 @@ import javafx.scene.layout.HBox;
 import javafx.util.Duration;
 
 import java.time.Instant;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -33,7 +32,8 @@ public class DashboardController {
     // Artist icon cache + thread pool
     private final Map<String, String> artistImageCache = new ConcurrentHashMap<>();
     private final ExecutorService artistImagePool = Executors.newFixedThreadPool(4);
-
+    private final Deque<RecentTrackRow> trackHistory = new LinkedList<>();
+    private static final int MAX_HISTORY = 100;
     // Tabs
     @FXML private TabPane tabs;
 
@@ -196,7 +196,19 @@ public class DashboardController {
         if (autoRefreshCheck != null) {
             // Always-on: keep it checked and enabled, but we don't rely on it.
             autoRefreshCheck.setSelected(true);
-            autoRefreshCheck.setDisable(true);
+            autoRefreshCheck.setDisable(false);
+
+            autoRefreshCheck.selectedProperty().addListener((obs, oldVal, newVal) -> {
+            if(newVal){
+                configureAutoRefresh();
+                statusLabel.setText("Auto-Refresh Enabled.");
+            }else {
+                if(autoRefreshTimeline != null){
+                    autoRefreshTimeline.stop(); // Stops the timer
+                }
+                statusLabel.setText("Auto-Refresh Disabled.");
+            }
+            });
         }
 
         // Refresh relative time every 20s
@@ -241,14 +253,13 @@ public class DashboardController {
     private void refreshAll() {
         if (client == null || busyRecent || busyArtists) return;
 
+        // Remove tracksTable.getItems().clear();  <-- REMOVE OR COMMENT THIS OUT
+
         recentPage = 1;
         recentTotalPages = 1;
-        tracksTable.getItems().clear();
 
-        // while fetching page 1
         loadMoreButton.setDisable(true);
-
-        loadRecentPage(recentPage, true);
+        loadRecentPage(recentPage, true); // This will now "diff" the data instead of replacing
         loadTopArtists();
     }
 
@@ -282,23 +293,47 @@ public class DashboardController {
             recentPage = res.page;
             recentTotalPages = Math.max(1, res.totalPages);
 
-            if (replace) tracksTable.getItems().setAll(res.items);
-            else tracksTable.getItems().addAll(res.items);
+            if (replace) {
+                // 1. DATA CLEANUP: Immediately remove any row currently marked "Now Playing"
+                // This allows the UI to refresh the state of the current song automatically.
+                trackHistory.removeIf(RecentTrackRow::isNowPlaying);
+                tracksTable.getItems().removeIf(RecentTrackRow::isNowPlaying);
 
-            loadMoreButton.setDisable(recentPage >= recentTotalPages);
+                List<RecentTrackRow> newTracksFound = new LinkedList<>();
 
-            // ✅ update Now Playing bar whenever tracks change
+                for (RecentTrackRow fetchedRow : res.items) {
+                    // 2. DEDUPLICATION: Use your isSameScrobble logic
+                    boolean alreadyExists = trackHistory.stream()
+                            .anyMatch(existing -> isSameScrobble(fetchedRow, existing));
+
+                    // If we find a match in our history, we stop looking for "new" scrobbles
+                    if (alreadyExists) break;
+
+                    newTracksFound.add(fetchedRow);
+                }
+
+                // 3. LIFO INSERTION: Add newest tracks to the top (Index 0)
+                // We reverse so the newest item from the API ends up at the very top
+                java.util.Collections.reverse(newTracksFound);
+                for (RecentTrackRow newTrack : newTracksFound) {
+                    trackHistory.addFirst(newTrack);         // Add to Data Deque
+                    tracksTable.getItems().add(0, newTrack); // Add to UI Table Top
+                }
+
+                // 4. FIFO LIMIT: Ensure the table doesn't grow past 100
+                while (trackHistory.size() > MAX_HISTORY) {
+                    trackHistory.removeLast(); // Remove oldest from Data
+                    tracksTable.getItems().remove(tracksTable.getItems().size() - 1); // Remove oldest from UI
+                }
+            }
+
+            // Refresh UI to update relative timestamps ("5m ago")
+            tracksTable.refresh();
             updateNowPlayingBar();
-
-            progress.setVisible(false);
-            refreshButton.setDisable(false);
-            busyRecent = false;
-        });
-
-        task.setOnFailed(e -> {
-            progress.setVisible(false);
-            refreshButton.setDisable(false);
+            trackHistory.removeIf(RecentTrackRow::isNowPlaying);
             loadMoreButton.setDisable(recentPage >= recentTotalPages);
+            progress.setVisible(false);
+            refreshButton.setDisable(false);
             busyRecent = false;
         });
 
@@ -362,9 +397,14 @@ public class DashboardController {
     // ✅ ALWAYS-ON AUTO REFRESH
     // -----------------------------
     private void configureAutoRefresh() {
+        // Stop any existing timer first
         if (autoRefreshTimeline != null) {
             autoRefreshTimeline.stop();
-            autoRefreshTimeline = null;
+        }
+
+        // CHECK: If the user unchecked the box, don't start a new timer
+        if (autoRefreshCheck != null && !autoRefreshCheck.isSelected()) {
+            return;
         }
 
         int secs = AUTO_REFRESH_DEFAULT_SECONDS;
@@ -381,7 +421,6 @@ public class DashboardController {
         autoRefreshTimeline.setCycleCount(Timeline.INDEFINITE);
         autoRefreshTimeline.play();
     }
-
     // -----------------------------
     // ✅ NOW PLAYING BAR (BOTTOM)
     // -----------------------------
@@ -424,5 +463,23 @@ public class DashboardController {
         if (s < 3600) return (s / 60) + "m ago";
         if (s < 86400) return (s / 3600) + "h ago";
         return (s / 86400) + "d ago";
+    }
+
+    //-------------------------------
+    //✅ SAME SCROBBLE
+    //-------------------------------
+
+    private boolean isSameScrobble(RecentTrackRow fetched, RecentTrackRow existing){
+        if (fetched == null || existing == null) return false;
+
+        if(fetched.isNowPlaying()){
+            return false;
+        }
+
+        if(fetched.getPlayedAt() != null && existing.getPlayedAt() != null){
+            return fetched.getPlayedAt().equals(existing.getPlayedAt()) &&
+                    fetched.getTrack().equals(existing.getTrack());
+        }
+        return false;
     }
 }
