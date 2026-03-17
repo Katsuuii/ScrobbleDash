@@ -272,14 +272,10 @@ public class DashboardController {
     // RECENT TRACKS (PAGINATION)
     // -----------------------------
     private void loadRecentPage(int page, boolean replace) {
-        if (client == null) return;
-        if (busyRecent) return;
+        if (client == null || busyRecent) return;
 
         busyRecent = true;
-
         progress.setVisible(true);
-        refreshButton.setDisable(true);
-        loadMoreButton.setDisable(true);
 
         Task<LastFmClient.PagedResult<RecentTrackRow>> task = new Task<>() {
             @Override
@@ -294,50 +290,63 @@ public class DashboardController {
             recentTotalPages = Math.max(1, res.totalPages);
 
             if (replace) {
-                // 1. DATA CLEANUP: Immediately remove any row currently marked "Now Playing"
-                // This allows the UI to refresh the state of the current song automatically.
-                trackHistory.removeIf(RecentTrackRow::isNowPlaying);
-                tracksTable.getItems().removeIf(RecentTrackRow::isNowPlaying);
+                // --- 1. PERFORMANCE ANALYSIS START ---
+                long startTime = System.nanoTime();
+                long startMem = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
 
-                List<RecentTrackRow> newTracksFound = new LinkedList<>();
+                // --- 2. DATA PROCESSING (The "Sliding Window" Logic) ---
+                List<RecentTrackRow> incoming = res.items;
+                List<RecentTrackRow> toAdd = new ArrayList<>();
 
-                for (RecentTrackRow fetchedRow : res.items) {
-                    // 2. DEDUPLICATION: Use your isSameScrobble logic
-                    boolean alreadyExists = trackHistory.stream()
-                            .anyMatch(existing -> isSameScrobble(fetchedRow, existing));
+                for (RecentTrackRow track : incoming) {
+                    // Deduplication check
+                    boolean exists = trackHistory.stream()
+                            .anyMatch(existing -> isSameScrobble(track, existing));
 
-                    // If we find a match in our history, we stop looking for "new" scrobbles
-                    if (alreadyExists) break;
-
-                    newTracksFound.add(fetchedRow);
+                    if (exists) break; // Found data already in history, stop scanning
+                    toAdd.add(track);
                 }
 
-                // 3. LIFO INSERTION: Add newest tracks to the top (Index 0)
-                // We reverse so the newest item from the API ends up at the very top
-                java.util.Collections.reverse(newTracksFound);
-                for (RecentTrackRow newTrack : newTracksFound) {
-                    trackHistory.addFirst(newTrack);         // Add to Data Deque
-                    tracksTable.getItems().add(0, newTrack); // Add to UI Table Top
+                // Add the newest items to the top (LIFO)
+                Collections.reverse(toAdd);
+                for (RecentTrackRow newRow : toAdd) {
+                    // Clean up old "Now Playing" placeholders if they match the new scrobble
+                    trackHistory.removeIf(r -> r.getTrack().equals(newRow.getTrack()) && r.isNowPlaying());
+                    tracksTable.getItems().removeIf(r -> r.getTrack().equals(newRow.getTrack()) && r.isNowPlaying());
+
+                    trackHistory.addFirst(newRow);
+                    tracksTable.getItems().add(0, newRow);
                 }
 
-                // 4. FIFO LIMIT: Ensure the table doesn't grow past 100
+                // Enforce K=100 (FIFO removal)
                 while (trackHistory.size() > MAX_HISTORY) {
-                    trackHistory.removeLast(); // Remove oldest from Data
-                    tracksTable.getItems().remove(tracksTable.getItems().size() - 1); // Remove oldest from UI
+                    trackHistory.removeLast();
+                    tracksTable.getItems().remove(tracksTable.getItems().size() - 1);
                 }
+
+                // --- 3. PERFORMANCE ANALYSIS END ---
+                long endTime = System.nanoTime();
+                long endMem = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+
+                // Console Output for the Data
+                System.out.println("--- ScrobbleDash Performance Stats ---");
+                System.out.println("Processing Time: " + (endTime - startTime) / 1_000_000.0 + " ms");
+                System.out.println("Memory Footprint: " + (endMem / (1024.0 * 1024.0)) + " MB");
+                System.out.println("Current History Size: " + trackHistory.size());
+                System.out.println("----------------------------------------");
             }
 
-            // Refresh UI to update relative timestamps ("5m ago")
-            tracksTable.refresh();
+            // Update UI components
             updateNowPlayingBar();
-            trackHistory.removeIf(RecentTrackRow::isNowPlaying);
-            loadMoreButton.setDisable(recentPage >= recentTotalPages);
+            tracksTable.refresh();
+
             progress.setVisible(false);
             refreshButton.setDisable(false);
+            loadMoreButton.setDisable(recentPage >= recentTotalPages);
             busyRecent = false;
         });
 
-        new Thread(task, "lastfm-recent").start();
+        new Thread(task).start();
     }
 
     private void loadTopArtists() {
@@ -469,17 +478,19 @@ public class DashboardController {
     //✅ SAME SCROBBLE
     //-------------------------------
 
-    private boolean isSameScrobble(RecentTrackRow fetched, RecentTrackRow existing){
+    private boolean isSameScrobble(RecentTrackRow fetched, RecentTrackRow existing) {
         if (fetched == null || existing == null) return false;
 
-        if(fetched.isNowPlaying()){
-            return false;
-        }
+        // If it's currently playing, we treat it as "not permanent"
+        // so it gets refreshed every cycle.
+        if (fetched.isNowPlaying() || existing.isNowPlaying()) return false;
 
-        if(fetched.getPlayedAt() != null && existing.getPlayedAt() != null){
+        // Use the timestamp for 100% accuracy
+        if (fetched.getPlayedAt() != null && existing.getPlayedAt() != null) {
             return fetched.getPlayedAt().equals(existing.getPlayedAt()) &&
-                    fetched.getTrack().equals(existing.getTrack());
+                    fetched.getTrack().equalsIgnoreCase(existing.getTrack());
         }
         return false;
     }
+
 }
